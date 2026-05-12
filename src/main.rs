@@ -1,39 +1,79 @@
 use borsh::{BorshDeserialize, BorshSerialize};
-use crosstown_bus::{CrosstownBus, MessageHandler, HandleError};
+use lapin::{Connection, ConnectionProperties, options::*, types::FieldTable};
+use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, BorshDeserialize, BorshSerialize)]
+#[derive(Debug, Clone, BorshDeserialize, BorshSerialize, Serialize, Deserialize)]
 pub struct UserCreatedEventMessage {
     pub user_id: String,
     pub user_name: String
 }
 
-pub struct UserCreatedHandler;
+#[tokio::main]
+async fn main() {
+    let conn = Connection::connect(
+        "amqp://guest:guest@localhost:5672",
+        ConnectionProperties::default(),
+    )
+    .await
+    .expect("Failed to connect to RabbitMQ");
 
-impl MessageHandler<UserCreatedEventMessage> for UserCreatedHandler {
+    let channel = conn
+        .create_channel()
+        .await
+        .expect("Failed to create channel");
 
-    fn get_handler_action(&self) -> String {
-        "user_created".to_owned()
+    let _queue = channel
+        .queue_declare(
+            "user_created",
+            QueueDeclareOptions {
+                durable: true,
+                auto_delete: false,
+                ..Default::default()
+            },
+            FieldTable::default(),
+        )
+        .await
+        .expect("Failed to declare queue");
+
+    let messages = vec![
+        UserCreatedEventMessage {
+            user_id: "1".to_owned(),
+            user_name: "2406355893-Amir".to_owned(),
+        },
+        UserCreatedEventMessage {
+            user_id: "2".to_owned(),
+            user_name: "2406355893-Budi".to_owned(),
+        },
+        UserCreatedEventMessage {
+            user_id: "3".to_owned(),
+            user_name: "2406355893-Cica".to_owned(),
+        },
+        UserCreatedEventMessage {
+            user_id: "4".to_owned(),
+            user_name: "2406355893-Dira".to_owned(),
+        },
+        UserCreatedEventMessage {
+            user_id: "5".to_owned(),
+            user_name: "2406355893-Emir".to_owned(),
+        },
+    ];
+
+    for message in messages {
+        let payload = serde_json::to_vec(&message).expect("Failed to serialize message");
+        
+        let _confirm = channel
+            .basic_publish(
+                "",
+                "user_created",
+                BasicPublishOptions::default(),
+                &payload,
+                Default::default(),
+            )
+            .await
+            .expect("Failed to publish message");
+
+        println!("Published message: {:?}", message);
     }
 
-    fn handle(&self, message: Box<UserCreatedEventMessage>) -> Result<(),
-HandleError> {
-        println!("Message received on handler 1: {:?}", message);
-        Ok(())
-    }
-}
-
-fn main() {
-    let mut p =
-CrosstownBus::new_queue_publisher("amqp://guest:guest@localhost:5672".to_owned(
-)).unwrap();
-    _ = p.publish_event("user_created".to_owned(), UserCreatedEventMessage {
-user_id: "1".to_owned(), user_name: "2406355893-Amir".to_owned() });
-    _ = p.publish_event("user_created".to_owned(), UserCreatedEventMessage {
-user_id: "2".to_owned(), user_name: "2406355893-Budi".to_owned() });
-    _ = p.publish_event("user_created".to_owned(), UserCreatedEventMessage {
-user_id: "3".to_owned(), user_name: "2406355893-Cica".to_owned() });
-    _ = p.publish_event("user_created".to_owned(), UserCreatedEventMessage {
-user_id: "4".to_owned(), user_name: "2406355893-Dira".to_owned() });
-    _ = p.publish_event("user_created".to_owned(), UserCreatedEventMessage {
-user_id: "5".to_owned(), user_name: "2406355893-Emir".to_owned() });
+    println!("All messages published successfully!");
 }
